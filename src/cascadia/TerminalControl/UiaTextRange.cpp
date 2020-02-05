@@ -11,6 +11,7 @@ using namespace Microsoft::WRL;
 
 HRESULT UiaTextRange::GetSelectionRanges(_In_ IUiaData* pData,
                                          _In_ IRawElementProviderSimple* pProvider,
+                                         _In_ const std::wstring_view wordDelimiters,
                                          _Out_ std::deque<ComPtr<UiaTextRange>>& ranges)
 {
     try
@@ -23,12 +24,11 @@ HRESULT UiaTextRange::GetSelectionRanges(_In_ IUiaData* pData,
         // create a range for each row
         for (const auto& rect : rectangles)
         {
-            ScreenInfoRow currentRow = rect.Top();
-            Endpoint start = _screenInfoRowToEndpoint(pData, currentRow) + rect.Left();
-            Endpoint end = _screenInfoRowToEndpoint(pData, currentRow) + rect.RightInclusive();
+            const auto start = rect.Origin();
+            const auto end = rect.EndExclusive();
 
             ComPtr<UiaTextRange> range;
-            RETURN_IF_FAILED(MakeAndInitialize<UiaTextRange>(&range, pData, pProvider, start, end, false));
+            RETURN_IF_FAILED(MakeAndInitialize<UiaTextRange>(&range, pData, pProvider, start, end, wordDelimiters));
             temporaryResult.emplace_back(std::move(range));
         }
         std::swap(temporaryResult, ranges);
@@ -38,33 +38,35 @@ HRESULT UiaTextRange::GetSelectionRanges(_In_ IUiaData* pData,
 }
 
 // degenerate range constructor.
-HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData, _In_ IRawElementProviderSimple* const pProvider)
+HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData, _In_ IRawElementProviderSimple* const pProvider, _In_ const std::wstring_view wordDelimiters)
 {
-    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider);
+    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, wordDelimiters);
 }
 
 HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData,
                                              _In_ IRawElementProviderSimple* const pProvider,
-                                             const Cursor& cursor)
+                                             const Cursor& cursor,
+                                             const std::wstring_view wordDelimiters)
 {
-    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, cursor);
+    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, cursor, wordDelimiters);
 }
 
 HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData,
                                              _In_ IRawElementProviderSimple* const pProvider,
-                                             const Endpoint start,
-                                             const Endpoint end,
-                                             const bool degenerate)
+                                             const COORD start,
+                                             const COORD end,
+                                             const std::wstring_view wordDelimiters)
 {
-    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, start, end, degenerate);
+    return UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, start, end, wordDelimiters);
 }
 
 // returns a degenerate text range of the start of the row closest to the y value of point
 HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData,
                                              _In_ IRawElementProviderSimple* const pProvider,
-                                             const UiaPoint point)
+                                             const UiaPoint point,
+                                             const std::wstring_view wordDelimiters)
 {
-    RETURN_IF_FAILED(UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider));
+    RETURN_IF_FAILED(UiaTextRangeBase::RuntimeClassInitialize(pData, pProvider, wordDelimiters));
     Initialize(point);
     return S_OK;
 }
@@ -101,15 +103,6 @@ IFACEMETHODIMP UiaTextRange::Clone(_Outptr_result_maybenull_ ITextRangeProvider*
     Tracing::s_TraceUia(this, ApiCall::Clone, &apiMsg);*/
 
     return S_OK;
-}
-
-IFACEMETHODIMP UiaTextRange::FindText(_In_ BSTR /*text*/,
-                                      _In_ BOOL /*searchBackward*/,
-                                      _In_ BOOL /*ignoreCase*/,
-                                      _Outptr_result_maybenull_ ITextRangeProvider** /*ppRetVal*/)
-{
-    // TODO GitHub #605: Search functionality
-    return E_NOTIMPL;
 }
 
 void UiaTextRange::_ChangeViewport(const SMALL_RECT /*NewWindow*/)

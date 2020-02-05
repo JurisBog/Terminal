@@ -70,6 +70,7 @@ public:
     bool HasConnectionType() const noexcept;
     GUID GetConnectionType() const noexcept;
 
+    void SetGuid(GUID guid) noexcept { _guid = guid; }
     void SetFontFace(std::wstring fontFace) noexcept;
     void SetColorScheme(std::optional<std::wstring> schemeName) noexcept;
     std::optional<std::wstring>& GetSchemeName() noexcept;
@@ -89,9 +90,11 @@ public:
     bool HasIcon() const noexcept;
     winrt::hstring GetExpandedIconPath() const;
     void SetIconPath(std::wstring_view path);
+    void ResetIconPath();
 
     bool HasBackgroundImage() const noexcept;
     winrt::hstring GetExpandedBackgroundImagePath() const;
+    void ResetBackgroundImagePath();
 
     CloseOnExitMode GetCloseOnExitMode() const noexcept;
     bool GetSuppressApplicationTitle() const noexcept;
@@ -100,6 +103,8 @@ public:
     void GenerateGuidIfNecessary() noexcept;
 
     static GUID GetGuidOrGenerateForJson(const Json::Value& json) noexcept;
+
+    void SetRetroTerminalEffect(bool value) noexcept;
 
 private:
     static std::wstring EvaluateStartingDirectory(const std::wstring& directory);
@@ -119,6 +124,8 @@ private:
     static std::wstring_view _SerializeCursorStyle(const winrt::Microsoft::Terminal::Settings::CursorStyle cursorShape);
 
     static GUID _GenerateGuidForProfile(const std::wstring& name, const std::optional<std::wstring>& source) noexcept;
+
+    static bool _ConvertJsonToBool(const Json::Value& json);
 
     std::optional<GUID> _guid{ std::nullopt };
     std::optional<std::wstring> _source{ std::nullopt };
@@ -163,4 +170,6 @@ private:
     friend class TerminalAppLocalTests::ProfileTests;
     friend class TerminalAppUnitTests::JsonTests;
     friend class TerminalAppUnitTests::DynamicProfileTests;
+
+    std::optional<bool> _retroTerminalEffect;
 };

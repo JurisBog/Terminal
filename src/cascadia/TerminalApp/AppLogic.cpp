@@ -27,10 +27,12 @@ namespace winrt
 // !!! IMPORTANT !!!
 // Make sure that these keys are in the same order as the
 // SettingsLoadWarnings/Errors enum is!
-static const std::array<std::wstring_view, 3> settingsLoadWarningsLabels {
+static const std::array<std::wstring_view, 5> settingsLoadWarningsLabels {
     USES_RESOURCE(L"MissingDefaultProfileText"),
     USES_RESOURCE(L"DuplicateProfileText"),
-    USES_RESOURCE(L"UnknownColorSchemeText")
+    USES_RESOURCE(L"UnknownColorSchemeText"),
+    USES_RESOURCE(L"InvalidBackgroundImage"),
+    USES_RESOURCE(L"InvalidIcon")
 };
 static const std::array<std::wstring_view, 2> settingsLoadErrorsLabels {
     USES_RESOURCE(L"NoProfilesText"),
@@ -129,9 +131,24 @@ namespace winrt::TerminalApp::implementation
         _root = winrt::make_self<TerminalPage>();
     }
 
+    // Method Decscription:
+    // - Called around the codebase to discover if this is a UWP where we need to turn off specific settings.
+    // Arguments:
+    // - <none> - reports internal state
+    // Return Value:
+    // - True if UWP, false otherwise.
+    bool AppLogic::IsUwp() const noexcept
+    {
+        return _isUwp;
+    }
+
     // Method Description:
     // - Called by UWP context invoker to let us know that we may have to change some of our behaviors
     //   for being a UWP
+    // Arguments:
+    // - <none> (sets to UWP = true, one way change)
+    // Return Value:
+    // - <none>
     void AppLogic::RunAsUwp()
     {
         _isUwp = true;
@@ -262,6 +279,7 @@ namespace winrt::TerminalApp::implementation
         dialog.Title(winrt::box_value(title));
         dialog.Content(winrt::box_value(warningsTextBlock));
         dialog.CloseButtonText(buttonText);
+        dialog.DefaultButton(Controls::ContentDialogButton::Close);
 
         _ShowDialog(nullptr, dialog);
     }
@@ -298,6 +316,7 @@ namespace winrt::TerminalApp::implementation
         dialog.Title(winrt::box_value(title));
         dialog.Content(winrt::box_value(warningsTextBlock));
         dialog.CloseButtonText(buttonText);
+        dialog.DefaultButton(Controls::ContentDialogButton::Close);
 
         _ShowDialog(nullptr, dialog);
     }
@@ -429,6 +448,13 @@ namespace winrt::TerminalApp::implementation
     }
 
     // Method Description:
+    // - See Pane::CalcSnappedDimension
+    float AppLogic::CalcSnappedDimension(const bool widthOrHeight, const float dimension) const
+    {
+        return _root->CalcSnappedDimension(widthOrHeight, dimension);
+    }
+
+    // Method Description:
     // - Attempt to load the settings. If we fail for any reason, returns an error.
     // Return Value:
     // - S_OK if we successfully parsed the settings, otherwise an appropriate HRESULT.
@@ -438,7 +464,7 @@ namespace winrt::TerminalApp::implementation
 
         try
         {
-            auto newSettings = CascadiaSettings::LoadAll();
+            auto newSettings = _isUwp ? CascadiaSettings::LoadUniversal() : CascadiaSettings::LoadAll();
             _settings = std::move(newSettings);
             const auto& warnings = _settings->GetWarnings();
             hr = warnings.size() == 0 ? S_OK : S_FALSE;
@@ -567,6 +593,30 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
+    fire_and_forget AppLogic::_LoadErrorsDialogRoutine()
+    {
+        co_await winrt::resume_foreground(_root->Dispatcher());
+
+        const winrt::hstring titleKey = USES_RESOURCE(L"ReloadJsonParseErrorTitle");
+        const winrt::hstring textKey = USES_RESOURCE(L"ReloadJsonParseErrorText");
+        _ShowLoadErrorsDialog(titleKey, textKey, _settingsLoadedResult);
+    }
+
+    fire_and_forget AppLogic::_ShowLoadWarningsDialogRoutine()
+    {
+        co_await winrt::resume_foreground(_root->Dispatcher());
+
+        _ShowLoadWarningsDialog();
+    }
+
+    fire_and_forget AppLogic::_RefreshThemeRoutine()
+    {
+        co_await winrt::resume_foreground(_root->Dispatcher());
+
+        // Refresh the UI theme
+        _ApplyTheme(_settings->GlobalSettings().GetRequestedTheme());
+    }
+
     // Method Description:
     // - Reloads the settings from the profile.json.
     void AppLogic::_ReloadSettings()
@@ -580,19 +630,12 @@ namespace winrt::TerminalApp::implementation
 
         if (FAILED(_settingsLoadedResult))
         {
-            _root->Dispatcher().RunAsync(CoreDispatcherPriority::Normal, [this]() {
-                const winrt::hstring titleKey = USES_RESOURCE(L"ReloadJsonParseErrorTitle");
-                const winrt::hstring textKey = USES_RESOURCE(L"ReloadJsonParseErrorText");
-                _ShowLoadErrorsDialog(titleKey, textKey, _settingsLoadedResult);
-            });
-
+            _LoadErrorsDialogRoutine();
             return;
         }
         else if (_settingsLoadedResult == S_FALSE)
         {
-            _root->Dispatcher().RunAsync(CoreDispatcherPriority::Normal, [this]() {
-                _ShowLoadWarningsDialog();
-            });
+            _ShowLoadWarningsDialogRoutine();
         }
 
         // Here, we successfully reloaded the settings, and created a new
@@ -601,10 +644,7 @@ namespace winrt::TerminalApp::implementation
         // Update the settings in TerminalPage
         _root->SetSettings(_settings, true);
 
-        _root->Dispatcher().RunAsync(CoreDispatcherPriority::Normal, [this]() {
-            // Refresh the UI theme
-            _ApplyTheme(_settings->GlobalSettings().GetRequestedTheme());
-        });
+        _RefreshThemeRoutine();
     }
 
     // Method Description:
@@ -678,6 +718,24 @@ namespace winrt::TerminalApp::implementation
         {
             _root->CloseWindow();
         }
+    }
+
+    int32_t AppLogic::SetStartupCommandline(array_view<const winrt::hstring> actions)
+    {
+        if (_root)
+        {
+            return _root->SetStartupCommandline(actions);
+        }
+        return 0;
+    }
+
+    winrt::hstring AppLogic::EarlyExitMessage()
+    {
+        if (_root)
+        {
+            return _root->EarlyExitMessage();
+        }
+        return { L"" };
     }
 
     // -------------------------------- WinRT Events ---------------------------------
